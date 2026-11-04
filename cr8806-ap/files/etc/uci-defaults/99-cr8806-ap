@@ -1,0 +1,58 @@
+#!/bin/sh
+# Dumb AP cho Xiaomi CR8806: ca 4 cong (lan1-3 + wan) chung br-lan, lay IP bang DHCP tu router
+# chinh, khong DHCP server. Luon co them IP du phong 192.168.1.1/24 tren br-lan de vao duoc
+# khi khong co DHCP (cam may tinh truc tiep, dat IP tinh 192.168.1.2).
+# Wi-Fi de tat: chay /root/setup-ap.sh sau khi flash de cau hinh SSID, kenh, k/v/r.
+
+# Chi chay 1 lan: sysupgrade giu config thi khong ghi de cau hinh cua ban.
+[ -n "$(uci -q get system.@system[0].cr8806_ap)" ] && exit 0
+
+. /lib/functions.sh
+
+brdev=""
+check_dev() { [ "$(uci -q get network.$1.name)" = "br-lan" ] && brdev="$1"; }
+config_load network
+config_foreach check_dev device
+
+if [ -n "$brdev" ]; then
+	uci -q del_list network.$brdev.ports='wan'
+	uci add_list network.$brdev.ports='wan'
+fi
+
+uci set network.lan.proto='dhcp'
+uci -q delete network.lan.ipaddr
+uci -q delete network.lan.netmask
+uci -q delete network.lan.ip6assign
+uci -q delete network.wan
+uci -q delete network.wan6
+
+uci set network.lan_fallback=interface
+uci set network.lan_fallback.device='br-lan'
+uci set network.lan_fallback.proto='static'
+uci set network.lan_fallback.ipaddr='192.168.1.1'
+uci set network.lan_fallback.netmask='255.255.255.0'
+
+# firewall: lan_fallback cung vung lan (AP khong NAT, vung lan cho phep het)
+lanzone=""
+find_lan_zone() { [ "$(uci -q get firewall.$1.name)" = "lan" ] && lanzone="$1"; }
+config_load firewall
+config_foreach find_lan_zone zone
+if [ -n "$lanzone" ]; then
+	uci -q del_list firewall.$lanzone.network='lan_fallback'
+	uci add_list firewall.$lanzone.network='lan_fallback'
+fi
+
+uci set system.@system[0].hostname='CR8806-AP'
+uci set system.@system[0].zonename='Asia/Ho_Chi_Minh'
+uci set system.@system[0].timezone='<+07>-7'
+uci set system.@system[0].log_size='128'
+uci -q delete system.ntp.server
+uci add_list system.ntp.server='0.vn.pool.ntp.org'
+uci add_list system.ntp.server='1.asia.pool.ntp.org'
+uci add_list system.ntp.server='time.cloudflare.com'
+
+uci set system.@system[0].cr8806_ap='1'
+uci commit network
+uci commit firewall
+uci commit system
+exit 0

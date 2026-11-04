@@ -1,0 +1,81 @@
+# Build ban AP (NSS) cho Xiaomi CR8806 (M79) bang cr8806-ap/build.sh.
+# Chay tay: Actions -> "CR8806 AP build" -> Run workflow. Anh nam o artifact "cr8806-ap";
+# chon release=true de tao them mot GitHub release (tag cr8806-ap-YYYY.MM.DD-<run>).
+name: CR8806 AP build
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Tao GitHub release tu ban build"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cr8806-ap
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - name: Free disk space
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup \
+            /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force >/dev/null 2>&1 || true
+          df -h / | tail -1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update || true
+          sudo apt-get install -y bzip2 g++ gawk gcc git glibc-source libncurses-dev make rsync
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # scripts/getver.sh lay revision tu lich su git
+
+      - name: Cache downloads and ccache
+        uses: actions/cache@v6
+        with:
+          path: |
+            dl
+            .ccache
+          key: cr8806-ap-${{ hashFiles('feeds.conf.default', 'cr8806-ap/ap.config', 'include/kernel-*', 'target/linux/qualcommax/**/config-*') }}-${{ github.run_id }}
+          restore-keys: |
+            cr8806-ap-${{ hashFiles('feeds.conf.default', 'cr8806-ap/ap.config', 'include/kernel-*', 'target/linux/qualcommax/**/config-*') }}-
+            cr8806-ap-
+
+      - name: Build
+        run: |
+          set -eu
+          export CCACHE_DIR="$GITHUB_WORKSPACE/.ccache"
+          sh cr8806-ap/build.sh
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cr8806-ap
+          path: bin/cr8806-ap/*
+          if-no-files-found: error
+
+      - name: GitHub release
+        if: ${{ inputs.release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="cr8806-ap-$(date -u +%Y.%m.%d)-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$tag" --prerelease \
+            --notes "Ban AP co NSS cho Xiaomi CR8806 (M79), build tu ${GITHUB_SHA::10}. Xem cr8806-ap/README.md." \
+            bin/cr8806-ap/*
