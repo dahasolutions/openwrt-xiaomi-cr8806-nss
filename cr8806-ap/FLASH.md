@@ -187,9 +187,16 @@ reboot
 
 - Lần đầu, OpenWrt chạy script `99-cr8806-ap`: gộp 4 cổng vào `br-lan`, lấy IP bằng DHCP,
   giữ IP dự phòng `192.168.1.1`, đặt múi giờ Việt Nam. Chờ khoảng 1–2 phút.
-- Rút dây khỏi máy tính, cắm AP vào mạng nhà (cổng nào cũng được). Tìm IP của AP trong danh
-  sách DHCP của router (tên `CR8806-AP`). Nên đặt **DHCP reservation** cho MAC này.
-- Hoặc giữ dây với máy tính `192.168.1.2` và vào `192.168.1.1`.
+- AP phát **Wi-Fi tạm** 2.4 GHz `DHs-AP-XXXX` (XXXX = 4 ký tự cuối MAC in trên tem), mật khẩu
+  `88888888`. Hostname của AP cũng là `DHs-AP-XXXX`.
+- Cắm AP vào mạng nhà (cổng nào cũng được), điện thoại/máy tính vào `DHs-AP-XXXX` (hoặc Wi-Fi nhà).
+  Tìm IP của AP trong danh sách DHCP của router (tên `DHs-AP-XXXX`), mở `http://<IP-AP>` hoặc SSH.
+  Nên đặt **DHCP reservation** cho AP.
+- AP **không cấp DHCP**: nếu AP chưa cắm vào router, máy vào Wi-Fi tạm sẽ không có IP. Khi đó đặt
+  IP tĩnh `192.168.1.2/24` (iPhone: *Cài đặt → Wi-Fi → (i) → Cấu hình IP → Thủ công*) rồi vào
+  `192.168.1.1`. Hoặc cắm dây máy tính `192.168.1.2`.
+- Ai trong tầm sóng biết mật khẩu `88888888` là vào được AP với quyền root khi chưa đặt mật khẩu,
+  nên làm **ngay** 2 việc dưới và bước 7.
 
 ```sh
 ssh root@<IP-AP>
@@ -203,6 +210,9 @@ fw_printenv flag_last_success            # đúng slot vừa ghi
 sh /root/setup-ap.sh Mesh1F 1 36         # tên, kênh 2.4G, kênh 5G
 # script hỏi mật khẩu DHs-5GHz và DHs-IoT (không hiện khi gõ)
 ```
+Script xoá mọi SSID cũ, gồm cả Wi-Fi tạm `DHs-AP-XXXX`. Nếu đang SSH qua Wi-Fi tạm, kết nối sẽ rớt
+khi script chạy tới `wifi reload`; vào lại qua `DHs-5GHz` hoặc Wi-Fi nhà. Hostname đổi thành
+`Mesh1F`... (router có thể vẫn hiện tên cũ tới lần gia hạn DHCP sau).
 Các AP còn lại: `Mesh2F 6 149`, `Mesh3F 11 36` (hoặc `52` nếu iPhone nhảy nhầm tầng).
 Tên SSID, mật khẩu và mobility domain phải **giống nhau** trên mọi AP. Chi tiết và cách
 đổi tên SSID: xem `README.md`.

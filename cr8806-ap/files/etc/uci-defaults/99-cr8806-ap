@@ -2,7 +2,9 @@
 # Dumb AP cho Xiaomi CR8806: ca 4 cong (lan1-3 + wan) chung br-lan, lay IP bang DHCP tu router
 # chinh, khong DHCP server. Luon co them IP du phong 192.168.1.1/24 tren br-lan de vao duoc
 # khi khong co DHCP (cam may tinh truc tiep, dat IP tinh 192.168.1.2).
-# Wi-Fi de tat: chay /root/setup-ap.sh sau khi flash de cau hinh SSID, kenh, k/v/r.
+# Wi-Fi: chi co Wi-Fi tam 2.4 GHz DHs-AP-XXXX / 88888888 (xem /etc/board.d/99_cr8806_setup_wifi);
+# chay /root/setup-ap.sh sau khi flash de cau hinh SSID, kenh, k/v/r (Wi-Fi tam bi xoa).
+# Hostname = ten Wi-Fi tam, de tim IP cua AP trong danh sach DHCP cua router chinh.
 
 # Chi chay 1 lan: sysupgrade giu config thi khong ghi de cau hinh cua ban.
 [ -n "$(uci -q get system.@system[0].cr8806_ap)" ] && exit 0
@@ -42,7 +44,8 @@ if [ -n "$lanzone" ]; then
 	uci add_list firewall.$lanzone.network='lan_fallback'
 fi
 
-uci set system.@system[0].hostname='CR8806-AP'
+host=$(jsonfilter -q -i /etc/board.json -e '@.wlan.defaults.ssids["2g"].ssid')
+uci set system.@system[0].hostname="${host:-CR8806-AP}"
 uci set system.@system[0].zonename='Asia/Ho_Chi_Minh'
 uci set system.@system[0].timezone='<+07>-7'
 uci set system.@system[0].log_size='128'
