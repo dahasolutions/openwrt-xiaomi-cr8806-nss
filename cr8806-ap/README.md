@@ -31,7 +31,10 @@ sh /root/setup-ap.sh Mesh2F 6 149
 sh /root/setup-ap.sh Mesh3F 11 52     # thêm --no-luci để tắt giao diện web, lấy lại RAM
 ```
 
-- `DHs-5GHz`: WPA2 + 802.11r (FT-PSK, mobility domain chung) + 802.11k/v, usteer.
+- `DHs-5GHz`: WPA2 + 802.11r (FT-PSK, mobility domain chung) + 802.11k/v (có beacon report), usteer
+  chủ động đẩy client sang AP mạnh hơn: dưới -70 dBm thì xin client quét, AP khác mạnh hơn 8 dB
+  thì gửi BSS Transition. Ngưỡng chỉnh được bằng `ROAM_SCAN`, `ROAM_TRIGGER`, `ROAM_DIFF`.
+- IGMP snooping trên `br-lan` (tắt bằng `MCAST_SNOOP=0`).
 - `DHs-IoT`: WPA2 thuần, không 802.11r/k/v.
 
 ## Build
@@ -41,6 +44,6 @@ Kết quả ở `bin/cr8806-ap/`.
 
 ## Flash
 
-Giống bản release của `main`: lần đầu cần UART + TFTP (hoặc SSH từ firmware gốc Xiaomi), boot
-initramfs trước, ổn rồi mới ghi `factory.ubi` vào **slot không đang chạy**, giữ slot kia làm
-đường lui. Đây là bản tự build, không có bảo hành.
+Từng bước chi tiết: [FLASH.md](FLASH.md). Tóm tắt: lần đầu cần UART + TFTP (hoặc SSH từ firmware
+gốc Xiaomi), boot initramfs trước, ổn rồi mới ghi `factory.ubi` vào **slot không đang chạy**, giữ
+slot kia làm đường lui. Đây là bản tự build, không có bảo hành.
