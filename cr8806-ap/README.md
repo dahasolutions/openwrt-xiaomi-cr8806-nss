@@ -7,7 +7,6 @@ nối dây về router chính, có roaming 802.11k/v/r giữa nhiều AP.
 
 | | Thay đổi | Lý do |
 |---|---|---|
-| Thêm | patch `999-998` (link descriptor cho 32 client mỗi radio, từ nhánh `testing`) | ~4 MiB RAM (NOTES mục 10) |
 | Kernel | `# CONFIG_BPF_JIT is not set` trong `ipq50xx/config-default` | ~2 MiB (`bpf_prog_pack`) |
 | Bỏ | SQM, shaper/IGS NSS, `tc-full`, `cake`, `ifb` | AP không cần |
 | Bỏ | `ppp`, `ppp-mod-pppoe`, `dnsmasq`, `odhcpd` | AP không quay PPPoE, không cấp DHCP |
