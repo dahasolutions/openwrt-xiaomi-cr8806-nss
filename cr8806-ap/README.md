@@ -21,7 +21,11 @@ nối dây về router chính, có roaming 802.11k/v/r giữa nhiều AP.
 
 - 4 cổng (lan1-3 + wan) chung `br-lan`, **lấy IP bằng DHCP** từ router chính, không cấp DHCP.
 - IP dự phòng **192.168.1.1/24** luôn có trên `br-lan` (cắm máy tính, đặt IP 192.168.1.2).
-- Múi giờ Asia/Ho_Chi_Minh, NTP Việt Nam. Wi-Fi tắt, image không chứa mật khẩu.
+- Múi giờ Asia/Ho_Chi_Minh, NTP Việt Nam.
+- **Wi-Fi tạm** 2.4 GHz `DHs-AP-XXXX` (XXXX = 4 ký tự cuối MAC trên tem), mật khẩu `88888888`, để vào
+  AP lần đầu không cần dây. Hostname cũng là `DHs-AP-XXXX` (tìm IP trong DHCP của router). Chạy
+  `setup-ap.sh` thì Wi-Fi tạm bị xoá. Chỉ xuất hiện khi chưa có cấu hình Wi-Fi (lần flash đầu
+  hoặc `sysupgrade -n`), `sysupgrade` giữ cấu hình thì không.
 
 ## Cấu hình từng AP
 

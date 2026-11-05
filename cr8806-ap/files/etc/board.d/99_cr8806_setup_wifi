@@ -1,0 +1,26 @@
+#
+# Wi-Fi tam de vao AP lan dau (khong can day LAN): 2.4 GHz, SSID DHs-AP-XXXX (XXXX = 4 ky tu cuoi
+# MAC in tren tem, doc tu phan vung ART offset 0), WPA2, mat khau 88888888.
+#
+# Chi co tac dung khi /etc/config/wireless chua co radio (lan dau, hoac sau sysupgrade -n):
+# bo sinh cau hinh mac80211 dung gia tri nay cho radio 2.4 GHz moi. Radio 5 GHz giu SSID tat.
+# /root/setup-ap.sh xoa moi wifi-iface nen Wi-Fi tam tu bien mat sau khi cau hinh.
+#
+
+. /lib/functions/uci-defaults.sh
+. /lib/functions/system.sh
+
+board_config_update
+
+mac=$(mtd_get_mac_binary "0:art" 0)
+case "$mac" in
+""|00:00:00:00:00:00|ff:ff:ff:ff:ff:ff) mac=$(get_mac_label) ;;
+esac
+suffix=$(echo "$mac" | tr -d ':' | tr 'a-f' 'A-F')
+suffix=${suffix#"${suffix%????}"}
+[ ${#suffix} -eq 4 ] || suffix=SETUP
+
+ucidef_set_country VN
+ucidef_set_wireless 2g "DHs-AP-$suffix" psk2 88888888
+
+board_config_flush
