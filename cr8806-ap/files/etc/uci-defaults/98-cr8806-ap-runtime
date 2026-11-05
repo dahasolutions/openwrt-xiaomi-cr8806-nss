@@ -1,0 +1,15 @@
+#!/bin/sh
+# Chay sau moi lan flash va moi lan sysupgrade (ke ca khi giu cau hinh), khac 99-cr8806-ap chi
+# chay lan dau. Chi lam nhung viec an toan khi chay lai.
+
+/etc/init.d/roam-cleanup enable
+
+# Da chay setup-ap.sh (co SSID that): tat IP du phong 192.168.1.1. AP nao cung co dia chi nay;
+# usteer gui broadcast tu 192.168.1.1 nen AP nhan coi la goi cua chinh minh va kernel bo goi
+# -> cac AP khong thay nhau, khong co danh sach AP lan can 802.11k.
+if uci -q get wireless.fast5g >/dev/null && uci -q get network.lan_fallback >/dev/null; then
+	uci set network.lan_fallback.auto='0'
+	uci commit network
+fi
+
+exit 0
