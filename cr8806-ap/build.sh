@@ -9,7 +9,8 @@ cd "$(dirname "$0")/.."
 
 rm -rf files && mkdir files
 cp -a cr8806-ap/files/. files/
-chmod +x files/root/setup-ap.sh files/etc/uci-defaults/99-cr8806-ap
+chmod +x files/root/setup-ap.sh files/etc/uci-defaults/99-cr8806-ap files/etc/uci-defaults/98-cr8806-ap-runtime \
+	files/usr/sbin/roam-cleanup files/etc/init.d/roam-cleanup
 
 cp cr8806-ap/ap.config .config
 make defconfig

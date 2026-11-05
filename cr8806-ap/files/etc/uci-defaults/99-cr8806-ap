@@ -1,7 +1,7 @@
 #!/bin/sh
 # Dumb AP cho Xiaomi CR8806: ca 4 cong (lan1-3 + wan) chung br-lan, lay IP bang DHCP tu router
-# chinh, khong DHCP server. Luon co them IP du phong 192.168.1.1/24 tren br-lan de vao duoc
-# khi khong co DHCP (cam may tinh truc tiep, dat IP tinh 192.168.1.2).
+# chinh, khong DHCP server. Them IP du phong 192.168.1.1/24 tren br-lan de vao duoc khi chua
+# co DHCP (cam may tinh truc tiep, dat IP tinh 192.168.1.2); setup-ap.sh tat no sau khi cau hinh.
 # Wi-Fi: chi co Wi-Fi tam 2.4 GHz DHs-AP-XXXX / 88888888 (xem /etc/board.d/99_cr8806_setup_wifi);
 # chay /root/setup-ap.sh sau khi flash de cau hinh SSID, kenh, k/v/r (Wi-Fi tam bi xoa).
 # Hostname = ten Wi-Fi tam, de tim IP cua AP trong danh sach DHCP cua router chinh.

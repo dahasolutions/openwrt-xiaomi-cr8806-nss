@@ -20,7 +20,9 @@ nối dây về router chính, có roaming 802.11k/v/r giữa nhiều AP.
 ## Mặc định sau khi flash
 
 - 4 cổng (lan1-3 + wan) chung `br-lan`, **lấy IP bằng DHCP** từ router chính, không cấp DHCP.
-- IP dự phòng **192.168.1.1/24** luôn có trên `br-lan` (cắm máy tính, đặt IP 192.168.1.2).
+- IP dự phòng **192.168.1.1/24** trên `br-lan` để vào AP **trước khi setup** (cắm máy tính, đặt IP
+  192.168.1.2). `setup-ap.sh` tắt nó: AP nào cũng có địa chỉ này, usteer gửi tin từ 192.168.1.1 nên
+  các AP bỏ gói của nhau và không thấy nhau. Giữ lại bằng `KEEP_FALLBACK=1`.
 - Múi giờ Asia/Ho_Chi_Minh, NTP Việt Nam.
 - **Wi-Fi tạm** 2.4 GHz `DHs-AP-XXXX` (XXXX = 4 ký tự cuối MAC trên tem), mật khẩu `88888888`, để vào
   AP lần đầu không cần dây. Hostname cũng là `DHs-AP-XXXX` (tìm IP trong DHCP của router). Chạy
@@ -32,13 +34,18 @@ nối dây về router chính, có roaming 802.11k/v/r giữa nhiều AP.
 ```sh
 sh /root/setup-ap.sh Mesh1F 1 36
 sh /root/setup-ap.sh Mesh2F 6 149
-sh /root/setup-ap.sh Mesh3F 11 52     # thêm --no-luci để tắt giao diện web, lấy lại RAM
+sh /root/setup-ap.sh Mesh3F 11 36     # thêm --no-luci để tắt giao diện web, lấy lại RAM
 ```
 
 - `DHs-5GHz`: WPA2 + 802.11r (FT-PSK, mobility domain chung) + 802.11k/v (có beacon report), usteer
   chủ động đẩy client sang AP mạnh hơn: dưới -70 dBm thì xin client quét, AP khác mạnh hơn 8 dB
   thì gửi BSS Transition. Ngưỡng chỉnh được bằng `ROAM_SCAN`, `ROAM_TRIGGER`, `ROAM_DIFF`.
 - IGMP snooping trên `br-lan` (tắt bằng `MCAST_SNOOP=0`).
+- `roam-cleanup` (service): client đã roam sang AP khác (usteer thấy) mà AP cũ còn giữ thì gỡ
+  ngay, thay vì chờ driver tự phát hiện mất ACK (~8 s). Trong ~8 s đó, máy nối cùng AP cũ không
+  liên lạc được với client vừa roam. Log: `logread -e roam-cleanup`.
+- `net.core.message_cost=300`: chặn dòng `eth0: dropped frame` (bản sao broadcast không tag mà
+  tag driver `qca-8021q` bỏ) làm đầy log. NTP khởi động lại khi `lan` có IP (hotplug).
 - `DHs-IoT`: WPA2 thuần, không 802.11r/k/v.
 
 ## Build

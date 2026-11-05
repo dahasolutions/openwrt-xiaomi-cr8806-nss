@@ -186,7 +186,8 @@ reboot
 ## 6. Lần khởi động đầu
 
 - Lần đầu, OpenWrt chạy script `99-cr8806-ap`: gộp 4 cổng vào `br-lan`, lấy IP bằng DHCP,
-  giữ IP dự phòng `192.168.1.1`, đặt múi giờ Việt Nam. Chờ khoảng 1–2 phút.
+  thêm IP dự phòng `192.168.1.1` (đến khi chạy setup ở bước 7), đặt múi giờ Việt Nam. Chờ khoảng
+  1–2 phút: NSS chờ `lan` có IP tối đa 30 s rồi mới bật, nên Wi-Fi phát sau khoảng 1 phút.
 - AP phát **Wi-Fi tạm** 2.4 GHz `DHs-AP-XXXX` (XXXX = 4 ký tự cuối MAC in trên tem), mật khẩu
   `88888888`. Hostname của AP cũng là `DHs-AP-XXXX`.
 - Cắm AP vào mạng nhà (cổng nào cũng được), điện thoại/máy tính vào `DHs-AP-XXXX` (hoặc Wi-Fi nhà).
@@ -214,6 +215,12 @@ Script xoá mọi SSID cũ, gồm cả Wi-Fi tạm `DHs-AP-XXXX`. Nếu đang SS
 khi script chạy tới `wifi reload`; vào lại qua `DHs-5GHz` hoặc Wi-Fi nhà. Hostname đổi thành
 `Mesh1F`... (router có thể vẫn hiện tên cũ tới lần gia hạn DHCP sau).
 Các AP còn lại: `Mesh2F 6 149`, `Mesh3F 11 36` (hoặc `52` nếu iPhone nhảy nhầm tầng).
+- Chạy ngay sau khi boot cũng được: script chờ radio sẵn sàng (tối đa 2 phút).
+- Script **tắt IP dự phòng 192.168.1.1** (AP nào cũng có địa chỉ này, để lại thì usteer giữa các AP
+  không thấy nhau). Nếu đang SSH qua 192.168.1.1, IP này tắt ở lần khởi động sau. Từ đó vào AP bằng
+  IP do router cấp; mất DHCP thì dùng UART hoặc failsafe.
+- Mỗi lần setup/flash nên làm **từng AP một và chưa cắm vào mạng nhà**: trước khi setup, mọi AP
+  đều có 192.168.1.1, cắm cùng lúc thì `ssh root@192.168.1.1` có thể vào nhầm máy.
 Tên SSID, mật khẩu và mobility domain phải **giống nhau** trên mọi AP. Chi tiết và cách
 đổi tên SSID: xem `README.md`.
 
@@ -222,7 +229,8 @@ Kiểm tra:
 iw dev                                   # 2 SSID đúng kênh
 logread -e nss | tail -3
 grep MemAvailable /proc/meminfo          # lúc nghỉ ~25 MiB trở lên
-ubus call usteer remote_info             # khi có từ 2 AP OpenWrt trở lên
+ubus call usteer remote_hosts            # phải thấy IP của các AP còn lại
+ubus call hostapd.phy1-ap0 rrm_nr_list   # 802.11k: có BSSID của các AP còn lại
 ```
 
 Sao lưu cấu hình sau khi xong:
@@ -254,8 +262,13 @@ Khi đã chạy OpenWrt, bản build mới cài bằng file `sysupgrade.bin`:
 scp openwrt-qualcommax-ipq50xx-xiaomi_cr8806-squashfs-sysupgrade.bin root@<IP-AP>:/tmp/
 ssh root@<IP-AP> "sysupgrade -v /tmp/openwrt-qualcommax-ipq50xx-xiaomi_cr8806-squashfs-sysupgrade.bin"
 ```
-`sysupgrade` giữ cấu hình và tự ghi vào đúng slot. Sau khi nâng cấp, nếu đã tắt LuCI thì
-kiểm tra lại (trạng thái tắt/bật dịch vụ có thể không được giữ).
+`sysupgrade` giữ cấu hình và ghi đè **slot đang chạy** (slot còn lại, firmware cũ, không bị đụng
+tới). Sau khi nâng cấp, nếu đã tắt LuCI thì kiểm tra lại (trạng thái tắt/bật dịch vụ có thể không
+được giữ). Nâng cấp **từng AP một**, AP này lên lại rồi mới làm AP tiếp theo.
+
+Bản mới mang thêm việc gì cho AP đã setup thì `/etc/uci-defaults/98-cr8806-ap-runtime` tự làm sau
+sysupgrade (bật `roam-cleanup`, tắt IP dự phòng nếu đã setup). Ngưỡng usteer hay cấu hình Wi-Fi
+mới trong `setup-ap.sh` thì **không** tự áp dụng: chạy lại `setup-ap.sh` nếu cần.
 
 ## 10. Kiểm tra NSS và k/v/r
 
