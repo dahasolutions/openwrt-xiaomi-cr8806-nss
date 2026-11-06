@@ -43,10 +43,36 @@ sh /root/setup-ap.sh Mesh3F 11 36     # thêm --no-luci để tắt giao diện 
 - IGMP snooping trên `br-lan` (tắt bằng `MCAST_SNOOP=0`).
 - `roam-cleanup` (service): client đã roam sang AP khác (usteer thấy) mà AP cũ còn giữ thì gỡ
   ngay, thay vì chờ driver tự phát hiện mất ACK (~8 s). Trong ~8 s đó, máy nối cùng AP cũ không
-  liên lạc được với client vừa roam. Log: `logread -e roam-cleanup`.
+  liên lạc được với client vừa roam. Log: `logread -e roam-cleanup`. Chỉ quét các SSID trong
+  `ssid_list` của usteer (`DHs-5GHz`): SSID khác usteer không theo dõi nên không biết client ở AP
+  nào, còn client IoT luôn im lặng nên trước đây bị hỏi usteer mỗi giây vô ích.
 - `net.core.message_cost=300`: chặn dòng `eth0: dropped frame` (bản sao broadcast không tag mà
   tag driver `qca-8021q` bỏ) làm đầy log. NTP khởi động lại khi `lan` có IP (hotplug).
 - `DHs-IoT`: WPA2 thuần, không 802.11r/k/v.
+
+## Đèn LED
+
+Mỗi đèn có hai màu: xanh, cam, bật cả hai thành màu pha. Xanh tối hơn nên dùng cho trạng thái
+bình thường, cam và pha cho những gì cần thấy ngay. `trafficled` (service ucode) điều khiển:
+
+| Đèn | Hiển thị | Ý nghĩa |
+|---|---|---|
+| Status | xanh đứng | bình thường |
+| | cam đứng | thiếu sóng Wi-Fi (một radio không có interface AP nào up) |
+| | cam nháy chậm | `lan` chưa có IP DHCP |
+| | pha nháy | đang khởi động (tối đa 180 s) |
+| Internet | xanh đứng | rảnh |
+| | pha nháy | có lưu lượng Wi-Fi; nhanh dần 250/100/40 ms theo lưu lượng |
+| | xanh nháy | chỉ có lưu lượng ở cổng LAN (thiết bị cắm dây vào AP) |
+| | pha đứng | uplink dưới 1 Gbps (vẫn nháy pha/xanh khi có lưu lượng) |
+| | cam nháy | không ping được gateway |
+| | cam đứng | mọi cổng mất kết nối |
+| Cả hai | pha nháy nhanh | `trafficled locate [giây]` (mặc định 30 s), để tìm AP |
+
+Ngưỡng "rảnh" là 128 KB/s (`IDLE`), cao hơn mức nền của ~20 thiết bị IoT. Lưu lượng Wi-Fi đọc từ
+`phy*-ap*` mỗi giây; cổng dây (`WIRED`, mặc định `lan1 lan2 lan3`) lấy trung bình 4 s vì NSS chỉ
+cập nhật bộ đếm cổng dây theo đợt ~3 s, nên đèn đổi nhịp theo LAN chậm hơn vài giây. Không dùng
+trigger `netdev` trên `wan` vì lý do đó; mục LED mặc định của board bị xoá khi flash.
 
 ## Tên thiết bị trong LuCI (DHCP lease từ router MikroTik)
 
