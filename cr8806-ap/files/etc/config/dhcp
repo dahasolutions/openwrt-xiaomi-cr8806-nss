@@ -1,0 +1,4 @@
+# Ban AP khong chay dnsmasq. Muc nay chi de LuCI (luci-rpc getHostHints) doc ten thiet bi tu
+# /tmp/dhcp.leases, file do /usr/sbin/lease-sync lay tu router.
+config dnsmasq
+	option leasefile '/tmp/dhcp.leases'

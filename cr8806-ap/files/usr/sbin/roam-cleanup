@@ -1,32 +1,54 @@
-#!/bin/sh
-# Go client "ma" o AP cu sau khi client da roam sang AP khac.
-#
-# Khi client chuyen AP bang 802.11r, AP cu khong duoc bao: no van giu client ~8 s cho toi khi
-# driver thay mat ACK. Trong luc do, may nao noi cung AP cu gui toi client se bi mat goi.
-# Go khi du ca 3 dieu kien:
-#   - usteer bao client dang ket noi o mot AP khac;
-#   - o AP nay client da im lang > IDLE_MS (mac dinh 800 ms);
-#   - client da ket noi o AP nay > MIN_CONN giay (mac dinh 5): khong go ket noi vua moi lap o
-#     AP moi trong luc usteer con thay ban ghi cu o AP cu.
-# Chi co tac dung voi SSID usteer theo doi (ssid_list); SSID khac khong co thong tin AP khac.
+#!/usr/bin/ucode -S
+// Go client "ma" o AP cu sau khi client da roam sang AP khac.
+//
+// Khi client chuyen AP bang 802.11r, AP cu khong duoc bao: no van giu client ~8 s cho toi khi
+// driver thay mat ACK. Trong luc do, may nao noi cung AP cu gui toi client se bi mat goi.
+// Go khi du ca 3 dieu kien:
+//   - usteer bao client dang ket noi o mot AP khac;
+//   - o AP nay client da im lang > IDLE_MS (mac dinh 800 ms);
+//   - client da ket noi o AP nay > MIN_CONN giay (mac dinh 5): khong go ket noi vua moi lap o
+//     AP moi trong luc usteer con thay ban ghi cu o AP cu.
+// Chi co tac dung voi SSID usteer theo doi (ssid_list); SSID khac khong co thong tin AP khac.
+//
+// Mot tien trinh duy nhat, doc station qua nl80211 va goi usteer/hostapd qua ubus: khong tao
+// tien trinh con moi giay (ban shell cu day load average len ~0.5 du CPU ranh).
 
-IDLE_MS=${IDLE_MS:-800}
-MIN_CONN=${MIN_CONN:-5}
+'use strict';
 
-while :; do
-	for obj in $(ubus list 'hostapd.*' 2>/dev/null); do
-		ifc=${obj#hostapd.}
-		iw dev "$ifc" station dump 2>/dev/null |
-			awk -v idle="$IDLE_MS" -v conn="$MIN_CONN" \
-				'/^Station/{m=$2} /inactive time/{i=$3} /connected time/{if (i > idle && $3 > conn) print m, i, $3}' |
-		while read -r mac inact ct; do
-			ubus call usteer get_client_info "{\"address\":\"$mac\"}" 2>/dev/null | tr -d '\t\n ' |
-				grep -qE '"[0-9a-fA-F.:]+#hostapd\.[^"]*":\{"connected":true' || continue
-			ubus call "$obj" del_client "{\"addr\":\"$mac\",\"reason\":5,\"deauth\":true,\"ban_time\":0}" >/dev/null 2>&1
-			# hostapd cho trang thai gui deauth roi moi xoa khoi kernel (~2 s); xoa ngay
-			iw dev "$ifc" station del "$mac" 2>/dev/null
-			logger -t roam-cleanup "$ifc: go $mac (im lang ${inact}ms, ket noi ${ct}s, client da o AP khac)"
-		done
-	done
-	sleep 1
-done
+import * as nl from 'nl80211';
+import * as ubus from 'ubus';
+import * as log from 'log';
+
+const IDLE_MS = +(getenv('IDLE_MS') ?? 800), MIN_CONN = +(getenv('MIN_CONN') ?? 5);
+
+log.openlog('roam-cleanup', 0, 'user');
+
+function connected_elsewhere(conn, mac) {
+	let info = conn.call('usteer', 'get_client_info', { address: mac });
+	for (let node, st in info?.nodes ?? {})
+		if (index(node, '#') >= 0 && st?.connected)	// "<ip>#hostapd.<if>" = AP khac
+			return true;
+	return false;
+}
+
+let conn;
+while (true) {
+	conn ??= ubus.connect();
+	let objs = conn?.list();
+	if (objs == null)
+		conn = null;	// chua co ubusd hoac ubusd khoi dong lai: ket noi lai o vong sau
+	for (let obj in filter(objs ?? [], (o) => match(o, /^hostapd\./))) {
+		let ifc = substr(obj, 8);
+		for (let sta in nl.request(nl.const.NL80211_CMD_GET_STATION, nl.const.NLM_F_DUMP, { dev: ifc }) ?? []) {
+			let inact = sta.sta_info?.inactive_time ?? 0, ct = sta.sta_info?.connected_time ?? 0;
+			if (inact <= IDLE_MS || ct <= MIN_CONN || !connected_elsewhere(conn, sta.mac))
+				continue;
+			conn.call(obj, 'del_client', { addr: sta.mac, reason: 5, deauth: true, ban_time: 0 });
+			// hostapd cho trang thai gui deauth roi moi xoa khoi kernel (~2 s); xoa ngay
+			nl.request(nl.const.NL80211_CMD_DEL_STATION, 0, { dev: ifc, mac: sta.mac });
+			log.syslog('info', 'go %s tren %s (im lang %d ms, ket noi %d s, client da o AP khac)',
+				sta.mac, ifc, inact, ct);
+		}
+	}
+	sleep(1000);
+}

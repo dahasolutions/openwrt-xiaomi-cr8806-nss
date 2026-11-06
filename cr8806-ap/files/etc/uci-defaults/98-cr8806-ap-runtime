@@ -3,6 +3,7 @@
 # chay lan dau. Chi lam nhung viec an toan khi chay lai.
 
 /etc/init.d/roam-cleanup enable
+/etc/init.d/lease-sync enable
 
 # Da chay setup-ap.sh (co SSID that): tat IP du phong 192.168.1.1. AP nao cung co dia chi nay;
 # usteer gui broadcast tu 192.168.1.1 nen AP nhan coi la goi cua chinh minh va kernel bo goi
