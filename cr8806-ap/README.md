@@ -36,6 +36,23 @@ sh /root/setup-ap.sh Mesh2F 6 149
 sh /root/setup-ap.sh Mesh3F 11 36     # thêm --no-luci để tắt giao diện web, lấy lại RAM
 ```
 
+Script hỏi tên hai mạng Wi-Fi (Enter để giữ tên mặc định) rồi hỏi mật khẩu:
+
+```
+Ten Wi-Fi 5 GHz [DHs-5GHz]: NhaToi-5G
+Ten Wi-Fi IoT 2.4 GHz [DHs-IoT]: NhaToi-IoT
+Mat khau NhaToi-5G: ********
+Mat khau NhaToi-IoT: ********
+```
+
+- **Mọi AP phải nhập cùng tên và cùng mật khẩu**, nếu không client sẽ coi là mạng khác và không
+  roaming được. Tên tối đa 32 byte (chữ có dấu tốn 2-3 byte mỗi ký tự), hai tên phải khác nhau.
+- Đặt sẵn tên để khỏi bị hỏi (vd. khi chạy lại cho nhiều AP):
+  `SSID_5G=NhaToi-5G SSID_IOT=NhaToi-IoT sh /root/setup-ap.sh Mesh1F 1 36`.
+- Usteer, `roam-cleanup` và `trafficled` tự theo tên mới, không cần sửa gì thêm.
+
+Dưới đây gọi theo tên mặc định:
+
 - `DHs-5GHz`: WPA2 + 802.11r (FT-PSK, mobility domain chung) + 802.11k/v (có beacon report), usteer
   chủ động đẩy client sang AP mạnh hơn: dưới -70 dBm thì xin client quét, AP khác mạnh hơn 8 dB
   thì gửi BSS Transition. Ngưỡng chỉnh được bằng `ROAM_SCAN`, `ROAM_TRIGGER`, `ROAM_DIFF`.

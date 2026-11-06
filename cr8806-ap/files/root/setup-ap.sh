@@ -1,24 +1,23 @@
 #!/bin/sh
-# Cau hinh Wi-Fi cho tung AP sau khi flash. Mat khau nhap luc chay, khong nam trong image.
+# Cau hinh Wi-Fi cho tung AP sau khi flash. Ten Wi-Fi (Enter = mac dinh) va mat khau hoi luc chay.
 #   sh /root/setup-ap.sh <ten> <kenh-2.4G> <kenh-5G> [--no-luci]
 #   vi du:  sh /root/setup-ap.sh Mesh1F 1 36
 #           sh /root/setup-ap.sh Mesh2F 6 149
 #           sh /root/setup-ap.sh Mesh3F 11 36
 #   --no-luci: tat uhttpd + rpcd (giao dien web) de lay lai ~2-3 MB RAM; bat lai bang
 #              /etc/init.d/rpcd enable && /etc/init.d/rpcd start && /etc/init.d/uhttpd enable && /etc/init.d/uhttpd start
-# Bien moi truong (tuy chon): SSID_5G, SSID_IOT, MOBILITY_DOMAIN (4 so hex, giong nhau o ca 3 AP)
+# Bien moi truong (tuy chon): SSID_5G, SSID_IOT (dat thi khong hoi), MOBILITY_DOMAIN (4 so hex)
+#   Ten Wi-Fi, mat khau va MOBILITY_DOMAIN phai giong nhau o moi AP thi moi roaming duoc.
 #   ROAM_SCAN (-70), ROAM_TRIGGER (-75), ROAM_DIFF (8 dB), USTEER_DEBUG (1), MCAST_SNOOP (1)
 #   KEEP_FALLBACK=1: giu IP du phong 192.168.1.1 (mac dinh tat sau setup, xem cuoi file)
 #
-# DHs-5GHz: 802.11r (FT-PSK sinh khoa tai cho) + 802.11k + 802.11v, usteer dieu phoi.
-# DHs-IoT : WPA2 thuan, KHONG 802.11r/k/v (thiet bi IoT cu loi khi AP quang ba FT).
+# Wi-Fi 5 GHz (mac dinh DHs-5GHz): 802.11r (FT-PSK sinh khoa tai cho) + 802.11k + 802.11v, usteer.
+# Wi-Fi IoT 2.4 GHz (mac dinh DHs-IoT): WPA2 thuan, KHONG 802.11r/k/v (IoT cu loi khi co FT).
 
 set -e
 name="$1"; ch2="$2"; ch5="$3"; opt="$4"
-[ -n "$name" ] && [ -n "$ch2" ] && [ -n "$ch5" ] || { sed -n '2,15p' "$0"; exit 1; }
+[ -n "$name" ] && [ -n "$ch2" ] && [ -n "$ch5" ] || { sed -n '2,16p' "$0"; exit 1; }
 
-SSID_5G="${SSID_5G:-DHs-5GHz}"
-SSID_IOT="${SSID_IOT:-DHs-IoT}"
 MOBILITY_DOMAIN="${MOBILITY_DOMAIN:-d5a1}"
 
 # Radio chi co trong cau hinh sau khi NSS arm va ath11k nap xong (~1 phut sau boot): cho toi da 2 phut.
@@ -35,6 +34,21 @@ while :; do
 	n=$((n + 1)); [ $n -le 24 ] || { echo "Khong tim thay radio 2g/5g" >&2; exit 1; }
 	sleep 5
 done
+
+# Ten Wi-Fi: bien moi truong neu da dat, khong thi hoi (Enter = mac dinh). SSID toi da 32 byte.
+read_ssid() {
+	s="$3"
+	if [ -z "$s" ]; then
+		printf '%s [%s]: ' "$1" "$2" >&2
+		read -r s
+		s="${s:-$2}"
+	fi
+	[ ${#s} -le 32 ] || { echo "Ten Wi-Fi toi da 32 byte: $s" >&2; exit 1; }
+	echo "$s"
+}
+SSID_5G="$(read_ssid "Ten Wi-Fi 5 GHz" DHs-5GHz "$SSID_5G")"
+SSID_IOT="$(read_ssid "Ten Wi-Fi IoT 2.4 GHz" DHs-IoT "$SSID_IOT")"
+[ "$SSID_5G" != "$SSID_IOT" ] || { echo "Hai ten Wi-Fi phai khac nhau" >&2; exit 1; }
 
 # BusyBox khong co stty; read -s cua ash tat hien ky tu
 read_key() {
@@ -107,7 +121,7 @@ if [ -n "$brdev" ]; then
 	uci set network.$brdev.igmp_snooping="${MCAST_SNOOP:-1}"
 fi
 
-# usteer: cac AP trao doi qua br-lan, chi dieu phoi DHs-5GHz (DHs-IoT khong bi dung toi).
+# usteer: cac AP trao doi qua br-lan, chi dieu phoi Wi-Fi 5 GHz (Wi-Fi IoT khong bi dung toi).
 # Nguong < 0 la dBm. Luong roam: tin hieu < roam_scan_snr -> xin client quet (beacon report);
 # co AP khac manh hon >= signal_diff_threshold dB va >= roam_trigger_snr -> gui BSS Transition
 # (802.11v) chi ten AP do; client khong chiu di sau roam_kick_delay -> ngat de no tu chon lai.
