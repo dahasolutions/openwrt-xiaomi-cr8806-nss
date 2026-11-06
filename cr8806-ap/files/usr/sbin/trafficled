@@ -1,0 +1,233 @@
+#!/usr/bin/ucode -S
+// LED cho CR8806 ban AP. Moi den co 2 kenh (blue, yellow); bat ca hai = mau pha.
+//
+// Den status (uu tien tu tren xuong):
+//   pha nhay nhanh  dang "tim AP" (trafficled locate [giay])
+//   pha nhay        dang khoi dong (chua du song + IP, toi da 180 s)
+//   cam dung        thieu song Wi-Fi (phyN khong co phyN-ap* nao up)
+//   cam nhay cham   lan chua co IP DHCP
+//   xanh dung       binh thuong
+// Den internet:
+//   pha nhay nhanh  dang "tim AP"
+//   cam dung        moi cong mat carrier
+//   cam nhay        khong ping duoc gateway (2 lan lien tiep, 10 s/lan)
+//   pha dung        uplink < 1 Gbps, ranh; co luu luong thi pha<->xanh
+//   pha nhay        co luu luong Wi-Fi, cang nhieu cang nhanh (250/100/40 ms)
+//   xanh nhay       chi co luu luong o cong LAN (thiet bi cam day vao AP)
+//   xanh dung       ranh
+//
+// Wi-Fi = rx+tx cua phy*-ap*, cap nhat moi giay.
+// LAN = rx+tx sysfs cua cac cong WIRED. NSS chi dong bo bo dem cong day theo dot ~3 s nen lay
+// trung binh tren WIRED_WIN giay (mot cua so 4 s luon chua it nhat mot dot). Cong uplink (wan)
+// khong tinh vi moi luu luong Wi-Fi cung di qua no.
+//
+// Mot tien trinh, chi doc/ghi sysfs va goi ubus: khong tao tien trinh con moi giay
+// (ban shell + ethtool ton ~2-3% mot nhan). Chi ping gateway la chay tien trinh ngoai, 10 s/lan.
+
+'use strict';
+
+import { readfile, writefile, lsdir, unlink } from 'fs';
+import * as ubus from 'ubus';
+
+const LOCATE = '/tmp/trafficled.locate', GWFILE = '/tmp/trafficled.gw';
+const L = '/sys/class/leds', N = '/sys/class/net';
+const IDLE = +(getenv('IDLE') ?? 131072);		// B/s (~1 Mbps); nen ~20 client IoT la 30-80 KB/s
+const PORTS = ['wan', 'lan1', 'lan2', 'lan3'];
+const WIRED = split(getenv('WIRED') ?? 'lan1 lan2 lan3', ' ');
+const WIRED_WIN = 4, BOOT_MAX = 180;
+
+function rd(path) {
+	let s = readfile(path);
+	return s == null ? null : trim(s);
+}
+
+function num(path) {
+	return +(rd(path) ?? 0) || 0;
+}
+
+function uptime() {
+	return int(split(rd('/proc/uptime') ?? '0', ' ')[0]);
+}
+
+if (ARGV[0] == 'locate') {
+	writefile(LOCATE, `${uptime() + (+ARGV[1] || 30)}\n`);
+	exit(0);
+}
+
+// kenh: 'on' | 'off' | <ms nhay>
+function chan(led, mode) {
+	let d = `${L}/${led}`;
+	if (mode == 'on')
+		writefile(`${d}/trigger`, 'default-on');
+	else if (mode == 'off') {
+		writefile(`${d}/trigger`, 'none');
+		writefile(`${d}/brightness`, '0');
+	}
+	else {
+		writefile(`${d}/trigger`, 'timer');
+		writefile(`${d}/delay_on`, `${mode}`);
+		writefile(`${d}/delay_off`, `${mode}`);
+	}
+}
+
+// show('status'|'wan', blue, yellow); chi ghi khi trang thai doi
+let shown = {};
+function show(led, blue, yellow) {
+	let key = `${blue} ${yellow}`;
+	if (shown[led] == key)
+		return;
+	shown[led] = key;
+	// tat truoc roi bat cung luc de hai kenh timer nhay cung pha
+	chan(`blue:${led}`, 'off');
+	chan(`yellow:${led}`, 'off');
+	chan(`blue:${led}`, blue);
+	chan(`yellow:${led}`, yellow);
+}
+
+// danh sach phy va interface AP; liet ke + loc ton ~1,8 ms nen chi lam moi 10 s/lan
+let phys = [], ifs = [];
+function refresh_ifaces() {
+	phys = lsdir('/sys/class/ieee80211') ?? [];
+	ifs = [];
+	for (let n in lsdir(N) ?? [])
+		if (substr(n, 0, 3) == 'phy' && index(n, '-ap') > 0)
+			push(ifs, n);
+}
+
+function wifi_total() {
+	let s = 0;
+	for (let n in ifs)
+		s += num(`${N}/${n}/statistics/rx_bytes`) + num(`${N}/${n}/statistics/tx_bytes`);
+	return s;
+}
+
+function wired_total() {
+	let s = 0;
+	for (let p in WIRED)
+		s += num(`${N}/${p}/statistics/rx_bytes`) + num(`${N}/${p}/statistics/tx_bytes`);
+	return s;
+}
+
+function radios_ok() {
+	if (!length(phys))
+		return false;
+	for (let phy in phys) {
+		let ok = false;
+		for (let n in ifs)
+			if (index(n, `${phy}-`) == 0 && rd(`${N}/${n}/operstate`) == 'up') {
+				ok = true;
+				break;
+			}
+		if (!ok)
+			return false;
+	}
+	return true;
+}
+
+// 'none' | 'slow' | 'fast'
+function link_state() {
+	let link = 'none';
+	for (let p in PORTS) {
+		if (rd(`${N}/${p}/carrier`) != '1')
+			continue;
+		if (+(rd(`${N}/${p}/speed`) ?? 0) >= 1000)
+			return 'fast';
+		link = 'slow';
+	}
+	return link;
+}
+
+// gateway mac dinh tu /proc/net/route (hex little-endian)
+function default_gw() {
+	for (let line in split(rd('/proc/net/route') ?? '', '\n')) {
+		let f = split(line, '\t');
+		if (f[1] == '00000000' && f[2] != '00000000' && length(f[2]) == 8)
+			return join('.', reverse(map([0, 2, 4, 6], (i) => hex(substr(f[2], i, 2)))));
+	}
+	return null;
+}
+
+function tier(rate) {
+	if (rate < IDLE) return null;
+	if (rate < 1048576) return 250;
+	if (rate < 12582912) return 100;
+	return 40;
+}
+
+let conn, has_ip = false, gwfail = 0, booted = false, tick = 0;
+refresh_ifaces();
+let prev = wifi_total(), wired_hist = [wired_total()];
+unlink(GWFILE);
+
+while (true) {
+	sleep(1000);
+	let up = uptime();
+
+	// interface them/bot (wifi reload) lam tong nhay; bo qua mot nhip
+	let jumped = false;
+	if (tick % 10 == 0) {
+		let old = join(' ', ifs);
+		refresh_ifaces();
+		jumped = join(' ', ifs) != old;
+	}
+	let cur = wifi_total(), rate = jumped ? 0 : max(0, cur - prev);
+	prev = cur;
+
+	push(wired_hist, wired_total());
+	if (length(wired_hist) > WIRED_WIN + 1)
+		shift(wired_hist);
+	let wrate = max(0, (wired_hist[-1] - wired_hist[0]) / max(1, length(wired_hist) - 1));
+
+	// 5 s/lan: IP cua lan; 10 s/lan: ping gateway (chay nen, doc ket qua o lan sau)
+	if (tick % 5 == 0) {
+		conn ??= ubus.connect();
+		let st = conn?.call('network.interface.lan', 'status');
+		if (st == null)
+			conn = null;
+		has_ip = !!st?.['ipv4-address']?.[0]?.address;
+	}
+	if (tick % 10 == 0) {
+		let g = rd(GWFILE);
+		if (g != null)
+			gwfail = (g == '1') ? 0 : gwfail + 1;
+		let gw = default_gw();
+		if (gw)
+			system(`(ping -c1 -W2 ${gw} >/dev/null 2>&1 && echo 1 || echo 0) > ${GWFILE} &`);
+		else
+			writefile(GWFILE, '0\n');
+	}
+	tick++;
+
+	let radio = radios_ok(), link = link_state();
+	if (!booted && ((radio && has_ip) || up >= BOOT_MAX))
+		booted = true;
+
+	let loc = false, end = rd(LOCATE);
+	if (end != null) {
+		if (up < +end)
+			loc = true;
+		else
+			unlink(LOCATE);
+	}
+
+	let blink = tier(rate), wblink = tier(wrate);
+
+	// den status
+	if (loc)               show('status', 100, 100);
+	else if (!booted)      show('status', 500, 500);
+	else if (!radio)       show('status', 'off', 'on');
+	else if (!has_ip)      show('status', 'off', 1000);
+	else                   show('status', 'on', 'off');
+
+	// den internet
+	if (loc)                    show('wan', 100, 100);
+	else if (link == 'none')    show('wan', 'off', 'on');
+	else if (gwfail >= 2)       show('wan', 'off', 500);
+	else if (link == 'slow') {
+		let b = blink ?? wblink;
+		show('wan', 'on', b ?? 'on');
+	}
+	else if (blink)             show('wan', blink, blink);
+	else if (wblink)            show('wan', wblink, 'off');
+	else                        show('wan', 'on', 'off');
+}

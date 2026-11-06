@@ -4,6 +4,14 @@
 
 /etc/init.d/roam-cleanup enable
 /etc/init.d/lease-sync enable
+/etc/init.d/trafficled enable
+
+# Den internet do trafficled dieu khien. Muc LED mac dinh tu board.json (netdev tren wan) se
+# ghi de trigger khi /etc/init.d/led chay, va bo dem wan bi NSS cap nhat theo dot 2-3 s.
+if uci -q get system.led_internet_blue >/dev/null; then
+	uci delete system.led_internet_blue
+	uci commit system
+fi
 
 # Da chay setup-ap.sh (co SSID that): tat IP du phong 192.168.1.1. AP nao cung co dia chi nay;
 # usteer gui broadcast tu 192.168.1.1 nen AP nhan coi la goi cua chinh minh va kernel bo goi

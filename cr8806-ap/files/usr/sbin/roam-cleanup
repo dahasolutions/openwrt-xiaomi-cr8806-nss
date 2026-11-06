@@ -8,7 +8,9 @@
 //   - o AP nay client da im lang > IDLE_MS (mac dinh 800 ms);
 //   - client da ket noi o AP nay > MIN_CONN giay (mac dinh 5): khong go ket noi vua moi lap o
 //     AP moi trong luc usteer con thay ban ghi cu o AP cu.
-// Chi co tac dung voi SSID usteer theo doi (ssid_list); SSID khac khong co thong tin AP khac.
+// Chi co tac dung voi SSID usteer theo doi (ssid_list); SSID khac khong co thong tin AP khac,
+// nen chi quet interface co SSID trong ssid_list (ssid_list trong = usteer theo doi moi SSID).
+// Bo qua SSID IoT tiet kiem ~12-20 lenh ubus/giay: client IoT luon "im lang" nen cu bi hoi usteer.
 //
 // Mot tien trinh duy nhat, doc station qua nl80211 va goi usteer/hostapd qua ubus: khong tao
 // tien trinh con moi giay (ban shell cu day load average len ~0.5 du CPU ranh).
@@ -17,9 +19,11 @@
 
 import * as nl from 'nl80211';
 import * as ubus from 'ubus';
+import * as uci from 'uci';
 import * as log from 'log';
 
 const IDLE_MS = +(getenv('IDLE_MS') ?? 800), MIN_CONN = +(getenv('MIN_CONN') ?? 5);
+const RESCAN = 30;	// giay; danh sach interface hostapd + ssid_list doc lai sau moi RESCAN vong
 
 log.openlog('roam-cleanup', 0, 'user');
 
@@ -31,14 +35,38 @@ function connected_elsewhere(conn, mac) {
 	return false;
 }
 
-let conn;
-while (true) {
-	conn ??= ubus.connect();
+// cac object hostapd.<if> co SSID usteer theo doi; null neu ubus chua san sang
+function scan_targets(conn) {
 	let objs = conn?.list();
 	if (objs == null)
-		conn = null;	// chua co ubusd hoac ubusd khoi dong lai: ket noi lai o vong sau
-	for (let obj in filter(objs ?? [], (o) => match(o, /^hostapd\./))) {
+		return null;
+	let ssids = [];
+	uci.cursor().foreach('usteer', 'usteer', (s) => { ssids = s.ssid_list ?? []; });
+	let res = [];
+	for (let obj in filter(objs, (o) => match(o, /^hostapd\./))) {
+		let ssid = conn.call(obj, 'get_status')?.ssid;
+		if (ssid != null && (!length(ssids) || ssid in ssids))
+			push(res, obj);
+	}
+	return res;
+}
+
+let conn, targets = [], ttl = 0;
+while (true) {
+	conn ??= ubus.connect();
+	if (ttl-- <= 0) {
+		targets = scan_targets(conn);
+		if (targets == null) {
+			conn = null;	// chua co ubusd hoac ubusd khoi dong lai: ket noi lai o vong sau
+			targets = [];
+		}
+		else
+			ttl = RESCAN;
+	}
+	for (let obj in targets) {
 		let ifc = substr(obj, 8);
+		// interface khong co station va interface da mat (wifi reload) deu tra ve null: khong phan
+		// biet duoc, nen interface moi/mat chi duoc nhan ra o lan quet lai sau RESCAN giay
 		for (let sta in nl.request(nl.const.NL80211_CMD_GET_STATION, nl.const.NLM_F_DUMP, { dev: ifc }) ?? []) {
 			let inact = sta.sta_info?.inactive_time ?? 0, ct = sta.sta_info?.connected_time ?? 0;
 			if (inact <= IDLE_MS || ct <= MIN_CONN || !connected_elsewhere(conn, sta.mac))

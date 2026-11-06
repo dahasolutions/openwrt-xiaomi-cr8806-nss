@@ -11,7 +11,8 @@ rm -rf files && mkdir files
 cp -a cr8806-ap/files/. files/
 chmod +x files/root/setup-ap.sh files/etc/uci-defaults/99-cr8806-ap files/etc/uci-defaults/98-cr8806-ap-runtime \
 	files/usr/sbin/roam-cleanup files/etc/init.d/roam-cleanup \
-	files/usr/sbin/lease-sync files/etc/init.d/lease-sync
+	files/usr/sbin/lease-sync files/etc/init.d/lease-sync \
+	files/usr/sbin/trafficled files/etc/init.d/trafficled
 
 cp cr8806-ap/ap.config .config
 make defconfig
