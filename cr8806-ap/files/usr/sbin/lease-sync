@@ -1,0 +1,55 @@
+#!/usr/bin/ucode -S
+// Lay danh sach DHCP lease tu router MikroTik (REST API, RouterOS v7) va ghi ra /tmp/dhcp.leases
+// (dinh dang dnsmasq) de LuCI hien ten + IP cua thiet bi. AP khong chay DHCP nen tu no khong biet ten.
+// File nam tren RAM: ghi 5 phut/lan khong mon flash.
+//
+// Cau hinh /etc/lease-sync.conf (chmod 600):
+//   ROUTER=192.168.2.1
+//   USER=ap-sync          # tai khoan MikroTik nhom policy=read,api,rest-api
+//   PASS=...
+// Ten uu tien Comment cua lease, khong co thi host-name.
+
+'use strict';
+
+import { readfile, writefile, rename, popen } from 'fs';
+
+const CONF = '/etc/lease-sync.conf', OUT = '/tmp/dhcp.leases';
+
+let conf = {};
+for (let line in split(readfile(CONF) ?? '', '\n')) {
+	let m = match(line, /^[ \t]*([A-Z_]+)=["']?([^"'#]*?)["']?[ \t]*(#.*)?$/);
+	if (m)
+		conf[m[1]] = m[2];
+}
+if (!conf.ROUTER || !conf.USER || !conf.PASS)
+	exit(0);
+
+for (let v in [ conf.ROUTER, conf.USER, conf.PASS ])
+	if (index(v, "'") >= 0) {
+		warn("lease-sync: dau ' trong cau hinh khong duoc ho tro\n");
+		exit(1);
+	}
+
+let url = `https://${conf.ROUTER}/rest/ip/dhcp-server/lease?.proplist=mac-address,address,host-name,comment`;
+let p = popen(`uclient-fetch -q -T 10 --no-check-certificate --user='${conf.USER}' --password='${conf.PASS}' -O - '${url}' 2>/dev/null`, 'r');
+let body = p ? p.read('all') : null;
+p?.close();
+
+let leases;
+try { leases = json(body); } catch (e) { leases = null; }
+if (type(leases) != 'array') {
+	system(`logger -t lease-sync "khong lay duoc lease tu ${conf.ROUTER}"`);
+	exit(1);
+}
+
+let exp = time() + 3600, out = '';
+for (let l in leases) {
+	let mac = lc(l['mac-address'] ?? ''), ip = l.address ?? '';
+	if (!match(mac, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) || !match(ip, /^[0-9.]+$/))
+		continue;
+	let name = replace(trim(l.comment || l['host-name'] || ''), /[^A-Za-z0-9._-]+/g, '-');
+	out += `${exp} ${mac} ${ip} ${length(name) ? name : '*'} *\n`;
+}
+
+writefile(OUT + '.tmp', out);
+rename(OUT + '.tmp', OUT);

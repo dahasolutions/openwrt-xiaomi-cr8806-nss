@@ -47,6 +47,34 @@ sh /root/setup-ap.sh Mesh3F 11 36     # thêm --no-luci để tắt giao diện 
   tag driver `qca-8021q` bỏ) làm đầy log. NTP khởi động lại khi `lan` có IP (hotplug).
 - `DHs-IoT`: WPA2 thuần, không 802.11r/k/v.
 
+## Tên thiết bị trong LuCI (DHCP lease từ router MikroTik)
+
+AP không chạy DHCP nên tự nó không biết tên thiết bị. `lease-sync` (service, 5 phút/lần và mỗi
+khi `lan` có IP) lấy lease từ REST API của MikroTik (RouterOS v7) ghi ra `/tmp/dhcp.leases`
+(RAM, không mòn flash); `/etc/config/dhcp` chỉ để LuCI đọc file đó. Tên ưu tiên **Comment** của
+lease, không có thì dùng host-name.
+
+Trên MikroTik (một lần):
+```
+/certificate add name=rest-api common-name=router.lan days-valid=3650
+/certificate sign rest-api
+/ip service set www-ssl certificate=rest-api disabled=no address=<IP các AP>/32,...
+/user group add name=lease-ro policy=read,api,rest-api
+/user add name=ap-sync group=lease-ro password="..." address=<IP các AP>/32,...
+```
+Đặt static lease cho các AP để IP khớp danh sách `address`.
+
+Trên mỗi AP:
+```sh
+umask 077; cat > /etc/lease-sync.conf <<EOC
+ROUTER=192.168.2.1
+USER=ap-sync
+PASS=...
+EOC
+/etc/init.d/lease-sync restart
+```
+`/etc/lease-sync.conf` được giữ qua sysupgrade. Không có file này thì service không chạy.
+
 ## Build
 
 GitHub Actions: workflow **CR8806 AP build** (chạy tay). Hoặc trên Linux: `sh cr8806-ap/build.sh`.
