@@ -49,10 +49,15 @@ sh /root/setup-ap.sh Mesh3F 11 36     # thêm --no-luci để tắt giao diện 
 
 ## Tên thiết bị trong LuCI (DHCP lease từ router MikroTik)
 
-AP không chạy DHCP nên tự nó không biết tên thiết bị. `lease-sync` (service, 5 phút/lần và mỗi
-khi `lan` có IP) lấy lease từ REST API của MikroTik (RouterOS v7) ghi ra `/tmp/dhcp.leases`
-(RAM, không mòn flash); `/etc/config/dhcp` chỉ để LuCI đọc file đó. Tên ưu tiên **Comment** của
-lease, không có thì dùng host-name.
+AP không chạy DHCP nên tự nó không biết tên thiết bị. `lease-sync` (service ucode) lấy lease từ
+REST API của MikroTik (RouterOS v7) 5 phút/lần và mỗi khi `lan` có IP, rồi cứ 10 giây ghi ra
+`/tmp/dhcp.leases` **chỉ những client đang kết nối Wi-Fi vào chính AP đó** (file trên RAM, chỉ ghi
+khi danh sách đổi). Nhờ vậy "Active DHCP Leases" của LuCI chỉ hiện máy đang ở AP này, không hiện
+cả nhà. `/etc/config/dhcp` chỉ để LuCI đọc file đó. Tên ưu tiên **Comment** của lease, không có
+thì dùng host-name. Thiết bị cắm dây vào cổng LAN của AP không có trong danh sách.
+
+Đổi IP của AP thì thêm IP mới vào `address` của `www-ssl` và của user `ap-sync`, không thì
+router cắt kết nối (`SSL - The connection indicated an EOF`).
 
 Trên MikroTik (một lần):
 ```
@@ -72,6 +77,7 @@ USER=ap-sync
 PASS=...
 EOC
 /etc/init.d/lease-sync restart
+lease-sync once && cat /tmp/dhcp.leases   # thử một lần
 ```
 `/etc/lease-sync.conf` được giữ qua sysupgrade. Không có file này thì service không chạy.
 
