@@ -141,6 +141,9 @@ uci set $u.roam_trigger_interval='20000'   # mac dinh 60s; cung la thoi gian toi
                                            # truoc khi bi dieu phoi -> 60s qua lau khi len cau thang
 uci set $u.roam_kick_delay='10000'
 uci set $u.band_steering_interval='0'      # moi bang tan la 1 SSID rieng, khong can band steering
+# Link measurement (802.11k): usteer chi luu RCPI/RSNI de hien thi, khong dung de roam. Yeu cau gui
+# qua ubus nen hostapd khong biet token -> moi 30 s log "Unexpected Link measurement report".
+uci set $u.link_measurement_interval='0'
 uci -q delete $u.event_log_types || true
 for t in signal_kick assoc_req_deny; do uci add_list $u.event_log_types="$t"; done
 
