@@ -1,55 +1,132 @@
 #!/usr/bin/ucode -S
-// Lay danh sach DHCP lease tu router MikroTik (REST API, RouterOS v7) va ghi ra /tmp/dhcp.leases
-// (dinh dang dnsmasq) de LuCI hien ten + IP cua thiet bi. AP khong chay DHCP nen tu no khong biet ten.
-// File nam tren RAM: ghi 5 phut/lan khong mon flash.
+// Ten thiet bi cho LuCI: lay DHCP lease tu router MikroTik (REST API, RouterOS v7), chi ghi ra
+// /tmp/dhcp.leases (dinh dang dnsmasq) nhung client DANG KET NOI Wi-Fi vao chinh AP nay. AP khong
+// chay DHCP nen tu no khong biet ten; ghi ca danh sach cua router thi LuCI hien moi thiet bi trong
+// nha o muc "Active DHCP Leases", ke ca may dang o AP khac.
 //
-// Cau hinh /etc/lease-sync.conf (chmod 600):
+// Mot tien trinh: hoi router FETCH_S giay/lan (mac dinh 300), doc station qua nl80211 SCAN_S giay/lan
+// (mac dinh 10), chi ghi file khi noi dung doi. File nam tren RAM, khong mon flash.
+// Client noi day qua cong LAN cua AP khong co trong danh sach (FDB cua switch khong tin duoc).
+//
+// Cau hinh /etc/lease-sync.conf (chmod 600), doc lai moi lan hoi router:
 //   ROUTER=192.168.2.1
 //   USER=ap-sync          # tai khoan MikroTik nhom policy=read,api,rest-api
 //   PASS=...
 // Ten uu tien Comment cua lease, khong co thi host-name.
+// `lease-sync once`: hoi router va ghi file mot lan roi thoat (de thu).
 
 'use strict';
 
 import { readfile, writefile, rename, popen } from 'fs';
+import * as nl from 'nl80211';
 
 const CONF = '/etc/lease-sync.conf', OUT = '/tmp/dhcp.leases';
+const FETCH_S = +(getenv('FETCH_S') ?? 300), SCAN_S = +(getenv('SCAN_S') ?? 10);
+const IFTYPE_AP = 3;
 
-let conf = {};
-for (let line in split(readfile(CONF) ?? '', '\n')) {
-	let m = match(line, /^[ \t]*([A-Z_]+)=["']?([^"'#]*?)["']?[ \t]*(#.*)?$/);
-	if (m)
-		conf[m[1]] = m[2];
+function log(msg) {
+	system(`logger -t lease-sync "${msg}"`);
 }
-if (!conf.ROUTER || !conf.USER || !conf.PASS)
-	exit(0);
 
-for (let v in [ conf.ROUTER, conf.USER, conf.PASS ])
-	if (index(v, "'") >= 0) {
-		warn("lease-sync: dau ' trong cau hinh khong duoc ho tro\n");
-		exit(1);
+function read_conf() {
+	let conf = {};
+	for (let line in split(readfile(CONF) ?? '', '\n')) {
+		let m = match(line, /^[ \t]*([A-Z_]+)=["']?([^"'#]*?)["']?[ \t]*(#.*)?$/);
+		if (m)
+			conf[m[1]] = m[2];
 	}
-
-let url = `https://${conf.ROUTER}/rest/ip/dhcp-server/lease?.proplist=mac-address,address,host-name,comment`;
-let p = popen(`uclient-fetch -q -T 10 --no-check-certificate --user='${conf.USER}' --password='${conf.PASS}' -O - '${url}' 2>/dev/null`, 'r');
-let body = p ? p.read('all') : null;
-p?.close();
-
-let leases;
-try { leases = json(body); } catch (e) { leases = null; }
-if (type(leases) != 'array') {
-	system(`logger -t lease-sync "khong lay duoc lease tu ${conf.ROUTER}"`);
-	exit(1);
+	if (!conf.ROUTER || !conf.USER || !conf.PASS)
+		return null;
+	for (let v in [ conf.ROUTER, conf.USER, conf.PASS ])
+		if (index(v, "'") >= 0) {
+			log("dau ' trong cau hinh khong duoc ho tro");
+			return null;
+		}
+	return conf;
 }
 
-let exp = time() + 3600, out = '';
-for (let l in leases) {
-	let mac = lc(l['mac-address'] ?? ''), ip = l.address ?? '';
-	if (!match(mac, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) || !match(ip, /^[0-9.]+$/))
-		continue;
-	let name = replace(trim(l.comment || l['host-name'] || ''), /[^A-Za-z0-9._-]+/g, '-');
-	out += `${exp} ${mac} ${ip} ${length(name) ? name : '*'} *\n`;
+// { mac: "ip name" } hoac null khi khong lay duoc.
+function fetch_leases(conf) {
+	let url = `https://${conf.ROUTER}/rest/ip/dhcp-server/lease?.proplist=mac-address,address,host-name,comment`;
+	let p = popen(`uclient-fetch -q -T 10 --no-check-certificate --user='${conf.USER}' --password='${conf.PASS}' -O - '${url}' 2>/dev/null`, 'r');
+	let body = p ? p.read('all') : null;
+	p?.close();
+
+	let leases;
+	try { leases = json(body); } catch (e) { leases = null; }
+	if (type(leases) != 'array')
+		return null;
+
+	let map = {};
+	for (let l in leases) {
+		let mac = lc(l['mac-address'] ?? ''), ip = l.address ?? '';
+		if (!match(mac, /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) || !match(ip, /^[0-9.]+$/))
+			continue;
+		let name = replace(trim(l.comment || l['host-name'] || ''), /[^A-Za-z0-9._-]+/g, '-');
+		map[mac] = `${ip} ${length(name) ? name : '*'}`;
+	}
+	return map;
 }
 
-writefile(OUT + '.tmp', out);
-rename(OUT + '.tmp', OUT);
+// MAC cua moi client dang ket noi vao cac interface AP cua may nay.
+function stations() {
+	let macs = [];
+	for (let ifc in nl.request(nl.const.NL80211_CMD_GET_INTERFACE, nl.const.NLM_F_DUMP) ?? []) {
+		if (ifc.iftype != IFTYPE_AP || !ifc.ifname)
+			continue;
+		for (let sta in nl.request(nl.const.NL80211_CMD_GET_STATION, nl.const.NLM_F_DUMP, { dev: ifc.ifname }) ?? [])
+			push(macs, lc(sta.mac));
+	}
+	return macs;
+}
+
+let leases = null, fetched = 0, expires = 0, written = null, failed = false;
+
+function write_out() {
+	let out = '';
+	for (let mac in sort(uniq(stations())))
+		if (leases?.[mac])
+			out += `${expires} ${mac} ${leases[mac]} *\n`;
+	if (out === written)
+		return;
+	writefile(OUT + '.tmp', out);
+	rename(OUT + '.tmp', OUT);
+	written = out;
+}
+
+function refresh() {
+	let conf = read_conf();
+	if (!conf)
+		return;
+	let map = fetch_leases(conf);
+	if (map == null) {
+		// Giu danh sach cu; chi ghi log lan dau loi, khong lap moi 5 phut.
+		if (!failed)
+			log(`khong lay duoc lease tu ${conf.ROUTER}`);
+		failed = true;
+		return;
+	}
+	if (failed)
+		log(`lay lai duoc lease tu ${conf.ROUTER}`);
+	failed = false;
+	leases = map;
+	expires = time() + FETCH_S + 3600;
+	written = null;	// het han moi: ghi lai file
+}
+
+if (ARGV[0] == 'once') {
+	refresh();
+	write_out();
+	exit(leases == null ? 1 : 0);
+}
+
+while (true) {
+	// Chua co lease (moi boot, router chua tra loi): hoi lai sau moi SCAN_S thay vi doi FETCH_S.
+	if (leases == null || time() - fetched >= FETCH_S) {
+		fetched = time();
+		refresh();
+	}
+	if (leases != null)
+		write_out();
+	sleep(SCAN_S * 1000);
+}

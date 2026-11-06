@@ -1,5 +1,5 @@
 # Ban AP chi co IP (DHCP) sau khi NSS arm, ~50 s sau boot. ntpd da khoi dong truoc do, khong
 # phan giai duoc may chu NTP va khong tu dong bo lai -> khoi dong lai sysntpd khi lan co IP.
 [ "$ACTION" = "ifup" ] && [ "$INTERFACE" = "lan" ] && /etc/init.d/sysntpd restart
-# Lay ten thiet bi tu router ngay khi co IP, khong cho chu ky 5 phut cua service lease-sync.
-[ "$ACTION" = "ifup" ] && [ "$INTERFACE" = "lan" ] && [ -x /usr/sbin/lease-sync ] && /usr/sbin/lease-sync &
+# Hoi router lay ten thiet bi ngay khi co IP (khoi dong lai lease-sync), khong cho chu ky 5 phut.
+[ "$ACTION" = "ifup" ] && [ "$INTERFACE" = "lan" ] && [ -x /etc/init.d/lease-sync ] && /etc/init.d/lease-sync restart
