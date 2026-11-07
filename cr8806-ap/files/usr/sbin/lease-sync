@@ -17,7 +17,7 @@
 
 'use strict';
 
-import { readfile, writefile, rename, popen } from 'fs';
+import { readfile, writefile, rename, popen, lsdir } from 'fs';
 import * as nl from 'nl80211';
 
 const CONF = '/etc/lease-sync.conf', OUT = '/tmp/dhcp.leases';
@@ -68,9 +68,19 @@ function fetch_leases(conf) {
 	return map;
 }
 
+// Module nl80211 cua ucode nap danh sach genl family o request DAU TIEN roi giu mai, khong nap lai.
+// Request dau tien truoc khi cfg80211 dang ky family "nl80211" (~34 s sau boot, lan co IP tu ~26 s
+// va hotplug restart service luc do) thi moi request sau tra null -> file rong mai, va moi lan
+// goi ro mot nl_msg (VSZ len ~20 MB sau 11 h). Chi goi khi da co phy: wiphy chi dang ky duoc sau
+// khi cfg80211 da khoi tao xong.
+let nl_ready = false;
+
 // MAC cua moi client dang ket noi vao cac interface AP cua may nay.
 function stations() {
 	let macs = [];
+	nl_ready ||= length(lsdir('/sys/class/ieee80211') ?? []) > 0;
+	if (!nl_ready)
+		return macs;
 	for (let ifc in nl.request(nl.const.NL80211_CMD_GET_INTERFACE, nl.const.NLM_F_DUMP) ?? []) {
 		if (ifc.iftype != IFTYPE_AP || !ifc.ifname)
 			continue;
